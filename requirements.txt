@@ -1,0 +1,17 @@
+# Manipulación y análisis de datos
+pandas>=2.0.0
+
+# Validación de esquemas y conexión LLM
+pydantic>=2.0.0
+openai>=1.0.0
+
+# Base de datos PostgreSQL
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+python-dotenv>=1.0.0
+
+# Dashboard interactivo
+streamlit>=1.30.0
+
+# Testing
+pytest>=7.0.0

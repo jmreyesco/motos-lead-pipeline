@@ -1,0 +1,30 @@
+from pydantic import BaseModel, ConfigDict
+from typing import Optional
+from datetime import datetime
+
+class LeadBase(BaseModel):
+    lead_id: str
+    empresa_id: Optional[str] = None
+    punto_venta_id: Optional[str] = None
+    nombre: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    canal: Optional[str] = None
+    modelo_interes: Optional[str] = None
+    cuota_inicial_declarada: float = 0.0
+    forma_pago: Optional[str] = None
+    intencion_compra: Optional[str] = None
+    objecion_principal: Optional[str] = None
+    pidio_cita_cotizacion: bool = False
+    score_prioridad: float = 0.0
+    temperatura: Optional[str] = None
+    asesor_id: Optional[int] = None
+    estado_gestion: Optional[str] = "NUEVO"
+
+class LeadResponse(LeadBase):
+    fecha_creacion: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class LeadStatusUpdate(BaseModel):
+    estado_gestion: str  # Ej: "CONTACTADO", "EN_NEGOCIACION", "VENDIDO", "DESCARTADO"
