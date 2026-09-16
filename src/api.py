@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -93,24 +94,42 @@ def update_lead_status(
     return updated_lead
 
 @app.get("/api/v1/metrics/summary")
-def get_metrics_summary(db: Session = Depends(get_db)):
+def get_metrics_summary(
+    empresa_id: Optional[str] = Query(None, description="ID de la empresa/concesionario"),
+    asesor_id: Optional[str] = Query(None, description="ID del asesor asignado"),
+    db: Session = Depends(get_db),
+):
     """
     Retorna la distribución total de leads por temperatura y estado de gestión
     para alimentar los gráficos del Dashboard.
     """
-    repo = LeadRepository(db)
-    
+    query = db.query(Lead)
+    if empresa_id:
+        query = query.filter(Lead.empresa_id == empresa_id.strip())
+    if asesor_id:
+        query = query.filter(Lead.asesor_id == asesor_id.strip())
+
     # Conteos por Temperatura
-    calientes = db.query(Lead).filter(Lead.temperatura == "CALIENTE").count()
-    tibios = db.query(Lead).filter(Lead.temperatura == "TIBIO").count()
-    frios = db.query(Lead).filter(Lead.temperatura == "FRIO").count()
+    calientes = query.filter(Lead.temperatura == "CALIENTE").count()
+    tibios = query.filter(Lead.temperatura == "TIBIO").count()
+    frios = query.filter(Lead.temperatura == "FRIO").count()
     
     # Conteos por Estado
-    asignados = db.query(Lead).filter(Lead.estado_gestion == "ASIGNADO").count()
-    contactados = db.query(Lead).filter(Lead.estado_gestion == "CONTACTADO").count()
-    negociacion = db.query(Lead).filter(Lead.estado_gestion == "EN_NEGOCIACION").count()
-    vendidos = db.query(Lead).filter(Lead.estado_gestion == "VENDIDO").count()
-    descartados = db.query(Lead).filter(Lead.estado_gestion == "DESCARTADO").count()
+    asignados = query.filter(Lead.estado_gestion == "ASIGNADO").count()
+    contactados = query.filter(Lead.estado_gestion == "CONTACTADO").count()
+    negociacion = query.filter(Lead.estado_gestion == "EN_NEGOCIACION").count()
+    vendidos = query.filter(Lead.estado_gestion == "VENDIDO").count()
+    descartados = query.filter(Lead.estado_gestion == "DESCARTADO").count()
+
+    canal_expression = func.coalesce(
+        func.nullif(func.trim(Lead.canal), ""),
+        "SIN CANAL",
+    )
+    canales = dict(
+        query.with_entities(canal_expression, func.count(Lead.lead_id))
+        .group_by(canal_expression)
+        .all()
+    )
 
     total = calientes + tibios + frios
 
@@ -127,7 +146,8 @@ def get_metrics_summary(db: Session = Depends(get_db)):
             "EN_NEGOCIACION": negociacion,
             "VENDIDO": vendidos,
             "DESCARTADO": descartados
-        }
+        },
+        "canales": canales,
     }
 
 
