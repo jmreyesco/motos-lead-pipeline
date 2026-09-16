@@ -18,7 +18,7 @@ class LeadBase(BaseModel):
     pidio_cita_cotizacion: bool = False
     score_prioridad: float = 0.0
     temperatura: Optional[str] = None
-    asesor_id: Optional[int] = None
+    asesor_id: Optional[str] = None
     estado_gestion: Optional[str] = "NUEVO"
 
 class LeadResponse(LeadBase):

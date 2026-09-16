@@ -73,11 +73,11 @@ def process_single_lead(
         "lead_id": lead_id,
         "empresa_id": empresa_id,
         "punto_venta_id": punto_venta_id,
-        "nombre": str(row.get("nombre", "")),
+        "nombre": str(row.get("nombre_cliente", "")),
         "email": str(row.get("email", "")) if pd.notna(row.get("email")) else None,
         "telefono": str(row.get("telefono", "")) if pd.notna(row.get("telefono")) else None,
         "canal": str(row.get("canal", "OTROS")).upper(),
-        "modelo_interes": ia_context.modelo_interes if (ia_context and ia_context.modelo_interes) else row.get("modelo_interes"),
+        "modelo_interes": ia_context.modelo_interes if (ia_context and ia_context.modelo_interes) else row.get("modelo_interes_texto"),
         "cuota_inicial_declarada": ia_context.cuota_inicial_declarada if ia_context else 0.0,
         "forma_pago": ia_context.forma_pago if ia_context else "NO_ESPECIFICA",
         "intencion_compra": ia_context.intencion_compra if ia_context else "MEDIA",
@@ -115,9 +115,27 @@ def run_pipeline(max_workers: int = 5):
     conversations_dict = ingestor.get_conversations()
     df_catalog = ingestor.get_catalog()
     df_historical = ingestor.get_historical_closures()
+    df_advisors = ingestor.get_advisors()
 
     print(f"📥 Leads leídos desde archivo: {len(df_leads)}")
 
+ # 🛠️ 3.1 Cargar / Actualizar Asesores en la Base de Datos antes de asignar
+    db = SessionLocal()
+    try:
+        df_to_save = df_advisors.copy()
+        
+        # 1. Renombrar la columna del CSV a la columna que espera PostgreSQL
+        if "capacidad_diaria_leads" in df_to_save.columns:
+            df_to_save = df_to_save.rename(columns={"capacidad_diaria_leads": "capacidad_maxima"})
+
+        # 2. Guardar directamente en la tabla 'asesores' de PostgreSQL
+        df_to_save.to_sql("asesores", con=engine, if_exists="append", index=False)
+        print("✅ Asesores sincronizados en la base de datos.")
+    except Exception as e:
+        print(f"⚠️ Nota al guardar asesores (pueden ya existir): {e}")
+    finally:
+        db.close()
+        
     # 4. Limpieza de datos
     df_leads_cleaned = DataCleaner.process_leads_dataframe(df_leads)
 

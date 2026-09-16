@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+from pathlib import Path
 from typing import Dict, Any
 from src.config import settings
 from src.ingestors.base import BaseLeadIngestor
@@ -15,6 +16,20 @@ class FileIngestor(BaseLeadIngestor):
         self.catalog_path = settings.CATALOG_FILE
         self.advisors_path = settings.ADVISORS_FILE
         self.historical_path = settings.HISTORICAL_FILE
+
+    # def _read_dataframe(self, path: Path) -> pd.DataFrame:
+    #     """Método auxiliar para verificar existencia y leer DataFrames limpiando columnas."""
+    #     if not path.exists():
+    #         raise FileNotFoundError(f"Archivo no encontrado: {path.resolve()}")
+        
+    #     if path.suffix in [".xlsx", ".xls"]:
+    #         df = pd.read_excel(path)
+    #     else:
+    #         df = pd.read_csv(path, encoding="utf-8-sig")
+
+    #     # Normaliza encabezados (quita espacios extra y convierte a minúsculas)
+    #     df.columns = df.columns.str.strip().str.lower()
+    #     return df    
 
     def get_leads(self) -> pd.DataFrame:
         if not self.leads_path.exists():
@@ -55,3 +70,8 @@ class FileIngestor(BaseLeadIngestor):
         if not self.historical_path.exists():
             raise FileNotFoundError(f"Archivo no encontrado: {self.historical_path}")
         return pd.read_csv(self.historical_path)
+
+    # def get_advisors(self) -> pd.DataFrame:
+    #     if not self.advisors_path.exists():
+    #         raise FileNotFoundError(f"Archivo de asesores no encontrado: {self.advisors_path}")
+    #     return pd.read_csv(self.advisors_path)
