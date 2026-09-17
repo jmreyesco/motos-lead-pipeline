@@ -1,19 +1,60 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import pandas as pd
 
-from src.database.connection import get_db
+from src.config import settings
+from src.database.connection import Base, engine, get_db
 from src.repository.lead_repository import LeadRepository
 from src.schemas.lead import LeadResponse, LeadStatusUpdate
-from src.database.models import Lead 
+import src.database.models
+from src.database.models import Lead, CatalogoMoto
+
+
+def sync_reference_tables() -> None:
+    """Crea tablas base y carga CSV de referencia sólo si aún no existen."""
+    try:
+        Base.metadata.create_all(bind=engine)
+
+        inspector = inspect(engine)
+        if not inspector.has_table("asesores"):
+            return
+
+        if settings.DATA_SOURCE != "FILE":
+            return
+
+        with engine.connect() as conn:
+            advisors_count = conn.execute(text("SELECT COUNT(*) FROM asesores")).scalar() or 0
+            if settings.ADVISORS_FILE.exists() and advisors_count == 0:
+                advisors_df = pd.read_csv(settings.ADVISORS_FILE)
+                if "asesor_id" in advisors_df.columns:
+                    advisors_df = advisors_df.drop_duplicates(subset=["asesor_id"], keep="first")
+                    advisors_df.to_sql("asesores", con=engine, if_exists="append", index=False)
+
+            catalog_count = conn.execute(text("SELECT COUNT(*) FROM catalogo_motos")).scalar() or 0
+            if settings.CATALOG_FILE.exists() and catalog_count == 0:
+                catalog_df = pd.read_csv(settings.CATALOG_FILE)
+                if "sku" in catalog_df.columns:
+                    catalog_df = catalog_df.drop_duplicates(subset=["sku"], keep="first")
+                    catalog_df.to_sql("catalogo_motos", con=engine, if_exists="append", index=False)
+    except Exception as exc:
+        print(f"⚠️ No se pudo sincronizar la data de referencia: {exc}")
+
 
 app = FastAPI(
     title="Motos Lead Pipeline API",
     description="API REST para consulta y gestión de leads priorizados con scoring de IA.",
     version="1.0.0",
 )
+
+
+@app.on_event("startup")
+def startup_event():
+    """Se ejecuta al levantar la API y prepara tablas base desde CSV."""
+    sync_reference_tables()
+
 
 # Configurar middleware de CORS
 app.add_middleware(
