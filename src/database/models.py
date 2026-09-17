@@ -86,6 +86,19 @@ class Asesor(Base):
     leads = relationship("Lead", back_populates="asesor")
 
 
+class CatalogoMoto(Base):
+    __tablename__ = "catalogo_motos"
+
+    sku = Column(String(50), primary_key=True)
+    marca = Column(String(100), nullable=True)
+    linea = Column(String(150), nullable=True)
+    cilindraje = Column(String(50), nullable=True)
+    segmento = Column(String(80), nullable=True)
+    precio_lista = Column(Float, default=0.0)
+    puntos_venta_disponibles = Column(String(255), nullable=True)
+    unidades_disponibles = Column(Integer, default=0)
+
+
 class Lead(Base):
     __tablename__ = "leads"
 

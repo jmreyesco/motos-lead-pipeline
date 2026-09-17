@@ -119,23 +119,34 @@ def run_pipeline(max_workers: int = 5):
 
     print(f"📥 Leads leídos desde archivo: {len(df_leads)}")
 
- # 🛠️ 3.1 Cargar / Actualizar Asesores en la Base de Datos antes de asignar
+    # 🛠️ 3.1 Cargar / Actualizar Asesores en la Base de Datos antes de asignar
     db = SessionLocal()
     try:
         df_to_save = df_advisors.copy()
-        
-        # 1. Renombrar la columna del CSV a la columna que espera PostgreSQL
+
         if "capacidad_diaria_leads" in df_to_save.columns:
             df_to_save = df_to_save.rename(columns={"capacidad_diaria_leads": "capacidad_maxima"})
 
-        # 2. Guardar directamente en la tabla 'asesores' de PostgreSQL
+        df_to_save = df_to_save.drop_duplicates(subset=["asesor_id"], keep="first")
         df_to_save.to_sql("asesores", con=engine, if_exists="append", index=False)
         print("✅ Asesores sincronizados en la base de datos.")
     except Exception as e:
         print(f"⚠️ Nota al guardar asesores (pueden ya existir): {e}")
     finally:
         db.close()
-        
+
+    # 🛠️ 3.2 Cargar / Actualizar Catálogo de Motos en la Base de Datos
+    db = SessionLocal()
+    try:
+        df_catalog_to_save = df_catalog.copy()
+        df_catalog_to_save = df_catalog_to_save.drop_duplicates(subset=["sku"], keep="first")
+        df_catalog_to_save.to_sql("catalogo_motos", con=engine, if_exists="append", index=False)
+        print("✅ Catálogo de motos sincronizado en la base de datos.")
+    except Exception as e:
+        print(f"⚠️ Nota al guardar el catálogo de motos (pueden ya existir): {e}")
+    finally:
+        db.close()
+
     # 4. Limpieza de datos
     df_leads_cleaned = DataCleaner.process_leads_dataframe(df_leads)
 
