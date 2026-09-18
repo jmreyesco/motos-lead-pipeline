@@ -1,12 +1,11 @@
+"""Normalización de datos de contacto y conversaciones."""
+
 import re
 import pandas as pd
 from typing import Dict, Any
 
 class DataCleaner:
-    """
-    Clase encargada de la normalización, estandarización de formatos 
-    y eliminación de leads duplicados antes de la persistencia en BD.
-    """
+    """Limpia datos antes de enviarlos a IA o guardarlos en PostgreSQL."""
 
     @staticmethod
     def clean_phone(phone: Any) -> str:

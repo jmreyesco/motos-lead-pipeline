@@ -1,12 +1,11 @@
+"""Contrato común para futuras fuentes de leads."""
+
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 import pandas as pd
 
 class BaseLeadIngestor(ABC):
-    """
-    Interfaz abstracta para la ingesta de datos.
-    Permite intercambiar fuentes de información (archivos planos, DB, Webhooks/APIs).
-    """
+    """Interfaz que permite sustituir archivos por una API o una base externa."""
 
     @abstractmethod
     def get_leads(self) -> pd.DataFrame:

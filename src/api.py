@@ -1,3 +1,5 @@
+"""API REST para consultar leads, métricas y estados de gestión."""
+
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, text
@@ -10,11 +12,16 @@ from src.database.connection import Base, engine, get_db
 from src.repository.lead_repository import LeadRepository
 from src.schemas.lead import LeadResponse, LeadStatusUpdate
 import src.database.models
-from src.database.models import Lead, CatalogoMoto
+from src.database.models import Lead
 
 
 def sync_reference_tables() -> None:
-    """Crea tablas base y carga CSV de referencia sólo si aún no existen."""
+    """
+    Crea las tablas ORM y carga asesores/catálogo si están vacíos.
+
+    Este paso permite levantar sólo FastAPI sin ejecutar previamente main.py.
+    Las tablas se cargan una sola vez para no duplicar claves primarias.
+    """
     try:
         Base.metadata.create_all(bind=engine)
 
@@ -56,7 +63,7 @@ def startup_event():
     sync_reference_tables()
 
 
-# Configurar middleware de CORS
+# CORS permite que el frontend React, ejecutándose en otro puerto, consuma la API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # En producción, reemplaza "*" por tu dominio de React
@@ -67,6 +74,7 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
+    """Confirma que el servidor está activo."""
     return {"message": "Servidor de Lead Pipeline activo y listo para recibir peticiones."}
 
 
@@ -77,10 +85,7 @@ def get_priority_leads(
     asesor_id: Optional[str] = Query(None, description="ID del asesor asignado"),
     db: Session = Depends(get_db)
 ):
-    """
-    Obtiene los leads clasificados como 'CALIENTE' ordenados del score más alto al más bajo.
-    Ideal para llamar inmediatamente por el call center o asesores.
-    """
+    """Obtiene leads calientes, opcionalmente filtrados por empresa y asesor."""
     repo = LeadRepository(db)
     return repo.get_priority_leads(
         limit=limit,
@@ -88,17 +93,6 @@ def get_priority_leads(
         asesor_id=asesor_id,
     )
 
-
-# @app.get("/api/v1/leads", response_model=List[LeadResponse])
-# def get_leads(
-#     temperatura: Optional[str] = Query(None, description="Filtro: CALIENTE, TIBIO, FRIO"),
-#     estado: Optional[str] = Query(None, description="Filtro: NUEVO, ASIGNADO, CONTACTADO, VENDIDO, etc."),
-#     limit: int = Query(default=100, ge=1, le=1000),
-#     db: Session = Depends(get_db)
-# ):
-#     """Obtiene una lista de leads permitiendo filtrar por temperatura y estado de gestión."""
-#     repo = LeadRepository(db)
-#     return repo.get_leads_filtered(temperatura=temperatura, estado=estado, limit=limit)
 
 @app.get("/api/v1/leads", response_model=List[LeadResponse])
 def get_leads_list(
@@ -109,9 +103,7 @@ def get_leads_list(
     limit: int = Query(default=100, ge=1, le=1000),
     db: Session = Depends(get_db)
 ):
-    """
-    Obtiene lista de leads filtrados por temperatura, estado, empresa y asesor.
-    """
+    """Obtiene leads ordenados por score con filtros opcionales."""
     repo = LeadRepository(db)
     return repo.get_leads_filtered(
         temperatura=temperatura,
@@ -140,10 +132,7 @@ def get_metrics_summary(
     asesor_id: Optional[str] = Query(None, description="ID del asesor asignado"),
     db: Session = Depends(get_db),
 ):
-    """
-    Retorna la distribución total de leads por temperatura y estado de gestión
-    para alimentar los gráficos del Dashboard.
-    """
+    """Devuelve los conteos que usa el dashboard para sus gráficos."""
     query = db.query(Lead)
     if empresa_id:
         query = query.filter(Lead.empresa_id == empresa_id.strip())
@@ -229,6 +218,6 @@ def get_leads(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Error al obtener los leads para la empresa {empresa_id}: {str(e)}"
-        )  
+        )

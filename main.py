@@ -1,4 +1,5 @@
-import sys
+"""Orquestador de ingesta, enriquecimiento, scoring y persistencia."""
+
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,28 +16,59 @@ from src.repository.lead_repository import LeadRepository
 
 
 def init_database():
-    """Crea las tablas en la base de datos si aún no existen."""
+    """Crea las tablas declaradas en los modelos SQLAlchemy."""
     Base.metadata.create_all(bind=engine)
 
 
+def sync_reference_table(
+    dataframe: pd.DataFrame,
+    table_name: str,
+    key_column: str,
+) -> None:
+    """
+    Carga una tabla de referencia sólo cuando está vacía.
+
+    Las tablas de asesores y catálogo se usan como datos maestros. Se evita
+    insertar el mismo CSV en cada ejecución del pipeline porque sus claves
+    primarias impedirían duplicados y generarían errores innecesarios.
+    """
+    with engine.connect() as connection:
+        current_rows = connection.execute(
+            text(f"SELECT COUNT(*) FROM {table_name}")
+        ).scalar() or 0
+
+    if current_rows:
+        print(f"ℹ️ La tabla {table_name} ya contiene datos; no se recarga.")
+        return
+
+    clean_dataframe = dataframe.drop_duplicates(
+        subset=[key_column],
+        keep="first",
+    )
+    clean_dataframe.to_sql(
+        table_name,
+        con=engine,
+        if_exists="append",
+        index=False,
+    )
+    print(f"✅ Tabla {table_name} sincronizada: {len(clean_dataframe)} registros.")
+
+
 def process_single_lead(
-    # Una fila individual extraída del DataFrame de ***leads.csv***. Contiene los datos básicos del cliente (id, nombre, teléfono, empresa, punto de venta).
+    # Fila individual de leads.csv con la información básica del prospecto.
     row: pd.Series,
-    # El diccionario creado a partir de ***conversaciones.json***. Permite buscar la charla de WhatsApp del cliente usando su lead_id
+    # Conversaciones indexadas por lead_id para localizar el chat correcto.
     conversations_dict: Dict[str, Any],
-    # Una instancia del extractor de IA. Es la clase encargada de comunicarse con gpt-4o-mini ***para analizar el texto del chat.***
+    # Analizador OpenAI que convierte el chat en campos estructurados.
     llm_extractor: ConversationLLMExtractor,
-    #Puntajes y cálculos de temperatura para priorizar leads. Se basa en reglas de negocio y datos históricos.
+    # Reglas que convierten las señales del lead en score y temperatura.
     scorer: LeadScorer,
-    # El catálogo de motos cargado en memoria ***(catalogo_motos.csv).*** Sirve para validar precios, cilindrajes o referencias de interés.
+    # Catálogo cargado para mantener el contrato actual del scorer.
     df_catalog: pd.DataFrame,
-    # Un conjunto con los IDs de los leads que ya están guardados y analizados en la BD
-    existing_lead_ids: set  
+    # IDs que ya tienen temperatura y no deben consumir tokens otra vez.
+    existing_lead_ids: set,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Procesa un único lead:
-    Si ya existe en la BD con análisis de IA, lo omite para no gastar tokens.
-    """
+    """Procesa un lead y devuelve el payload listo para guardarse."""
     lead_id = str(row.get("lead_id", ""))
 
     # 🛑 1. OMITIR LLAMADA A LA IA SI EL LEAD YA FUE PROCESADO PREVIAMENTE
@@ -89,15 +121,13 @@ def process_single_lead(
 
 
 def run_pipeline(max_workers: int = 5):
-    """
-    Ejecuta el pipeline optimizado con concurrencia e incremento.
-    """
+    """Ejecuta el flujo completo de archivos, IA, scoring y PostgreSQL."""
     print("🚀 Iniciando el pipeline de Ingesta, Extracción y Scoring...")
 
     # 1. Asegurar tablas en BD
     init_database()
 
-    # 2. Consultar IDs que ya fueron analizados en la BD
+    # 2. Consultar IDs ya analizados para evitar llamadas repetidas a OpenAI.
     db = SessionLocal()
     try:
         query_result = db.execute(text("SELECT lead_id FROM leads WHERE temperatura IS NOT NULL")).fetchall()
@@ -109,7 +139,7 @@ def run_pipeline(max_workers: int = 5):
 
     print(f"ℹ️ {len(existing_lead_ids)} leads ya están analizados en la BD y serán omitidos.")
 
-    # 3. Ingesta de datos
+    # 3. Leer todos los archivos de entrada.
     ingestor = FileIngestor()
     df_leads = ingestor.get_leads()
     conversations_dict = ingestor.get_conversations()
@@ -119,44 +149,31 @@ def run_pipeline(max_workers: int = 5):
 
     print(f"📥 Leads leídos desde archivo: {len(df_leads)}")
 
-    # 🛠️ 3.1 Cargar / Actualizar Asesores en la Base de Datos antes de asignar
-    db = SessionLocal()
+    # 3.1 Cargar asesores antes de intentar asignarlos a los leads.
     try:
         df_to_save = df_advisors.copy()
-
         if "capacidad_diaria_leads" in df_to_save.columns:
             df_to_save = df_to_save.rename(columns={"capacidad_diaria_leads": "capacidad_maxima"})
-
-        df_to_save = df_to_save.drop_duplicates(subset=["asesor_id"], keep="first")
-        df_to_save.to_sql("asesores", con=engine, if_exists="append", index=False)
-        print("✅ Asesores sincronizados en la base de datos.")
+        sync_reference_table(df_to_save, "asesores", "asesor_id")
     except Exception as e:
-        print(f"⚠️ Nota al guardar asesores (pueden ya existir): {e}")
-    finally:
-        db.close()
+        print(f"⚠️ No se pudo sincronizar asesores: {e}")
 
-    # 🛠️ 3.2 Cargar / Actualizar Catálogo de Motos en la Base de Datos
-    db = SessionLocal()
+    # 3.2 Cargar el catálogo para dejarlo disponible como tabla de referencia.
     try:
-        df_catalog_to_save = df_catalog.copy()
-        df_catalog_to_save = df_catalog_to_save.drop_duplicates(subset=["sku"], keep="first")
-        df_catalog_to_save.to_sql("catalogo_motos", con=engine, if_exists="append", index=False)
-        print("✅ Catálogo de motos sincronizado en la base de datos.")
+        sync_reference_table(df_catalog, "catalogo_motos", "sku")
     except Exception as e:
-        print(f"⚠️ Nota al guardar el catálogo de motos (pueden ya existir): {e}")
-    finally:
-        db.close()
+        print(f"⚠️ No se pudo sincronizar el catálogo de motos: {e}")
 
     # 4. Limpieza de datos
     df_leads_cleaned = DataCleaner.process_leads_dataframe(df_leads)
 
-    # 5. Componentes principales
+    # 5. Crear los componentes que se reutilizarán durante todo el lote.
     llm_extractor = ConversationLLMExtractor()
     scorer = LeadScorer(historical_df=df_historical)
 
     processed_payloads = []
 
-    # 6. Procesamiento concurrente con ThreadPoolExecutor
+    # 6. Procesar en paralelo porque la extracción de IA es una operación I/O.
     rows = [row for _, row in df_leads_cleaned.iterrows()]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -185,7 +202,7 @@ def run_pipeline(max_workers: int = 5):
         print("✅ No hay leads nuevos para procesar. Cero tokens consumidos.")
         return
 
-    # 7. Persistencia en Base de Datos para leads nuevos
+    # 7. Asignar asesor y guardar únicamente los leads nuevos.
     print(f"💾 Guardando {len(processed_payloads)} leads nuevos en la Base de Datos...")
     db = SessionLocal()
     repository = LeadRepository(db)

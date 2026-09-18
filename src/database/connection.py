@@ -1,14 +1,16 @@
+"""Conexión compartida a PostgreSQL y ciclo de vida de sesiones."""
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from src.config import settings
 
-# 1. Crear motor de base de datos
+# El engine administra el pool de conexiones hacia PostgreSQL.
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
-# 2. Crear clase base declarativa (AQUÍ SE CREA, NO SE IMPORTA DE MODELS)
+# Todos los modelos ORM heredan de esta Base.
 Base = declarative_base()
 
-# 3. Creador de sesiones
+# Las sesiones se crean por petición o por ejecución del pipeline.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
@@ -16,7 +18,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 def get_db():
-    """Generador de sesión de base de datos."""
+    """Entrega una sesión a FastAPI y la cierra siempre al finalizar."""
     db = SessionLocal()
     try:
         yield db

@@ -1,8 +1,11 @@
+"""Esquemas de entrada y salida usados por los endpoints de leads."""
+
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
 
 class LeadBase(BaseModel):
+    """Campos públicos comunes de un lead."""
     lead_id: str
     empresa_id: Optional[str] = None
     punto_venta_id: Optional[str] = None
@@ -22,9 +25,11 @@ class LeadBase(BaseModel):
     estado_gestion: Optional[str] = "NUEVO"
 
 class LeadResponse(LeadBase):
+    """Respuesta ORM serializable que entrega la API."""
     fecha_creacion: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 class LeadStatusUpdate(BaseModel):
+    """Cuerpo de la petición para cambiar el estado de gestión."""
     estado_gestion: str  # Ej: "CONTACTADO", "EN_NEGOCIACION", "VENDIDO", "DESCARTADO"

@@ -1,18 +1,23 @@
+"""Configuración central del pipeline y rutas de archivos de entrada."""
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Cargar variables del archivo .env
+# Cargar las variables privadas antes de construir el objeto de configuración.
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings:
+    """Valores de entorno y ubicaciones de los archivos del proyecto."""
+
+    # Credenciales y selección de la fuente de datos.
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     DATA_SOURCE: str = os.getenv("DATA_SOURCE", "FILE")
     
-    # Rutas relativas para los insumos sintéticos
+    # Todos los archivos de entrada viven en la carpeta data/ del repositorio.
     DATA_DIR: Path = BASE_DIR / "data"
     LEADS_FILE: Path = DATA_DIR / "leads.csv"
     CONVERSATIONS_FILE: Path = DATA_DIR / "conversaciones.json"

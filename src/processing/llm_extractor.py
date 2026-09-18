@@ -1,3 +1,5 @@
+"""Extracción estructurada de señales comerciales mediante OpenAI."""
+
 from typing import Optional
 from pydantic import BaseModel, Field
 from openai import OpenAI
@@ -5,6 +7,7 @@ from src.config import settings
 
 # 1. Definición del Esquema Pydantic (Garantiza el JSON estricto)
 class ExtractedLeadContext(BaseModel):
+    """Campos normalizados que la IA debe extraer de una conversación."""
     modelo_interes: Optional[str] = Field(
         default=None, 
         description="Modelo de motocicleta específico por el que pregunta el cliente."
@@ -37,14 +40,12 @@ class ConversationLLMExtractor:
     """
 
     def __init__(self):
-        # Si no hay API key configurada, se inicializa el cliente en modo fallback
+        """Crea el cliente sólo cuando existe una clave de OpenAI."""
         self.api_key = settings.OPENAI_API_KEY
         self.client = OpenAI(api_key=self.api_key) if self.api_key else None
 
     def extract_info(self, conversation_text: str) -> ExtractedLeadContext:
-        """
-        Envía la transcripción de la conversación al LLM y retorna un objeto Pydantic validado.
-        """
+        """Analiza una conversación y devuelve un resultado validado por Pydantic."""
         if not self.client:
             # Fallback seguro por si se ejecuta sin API key durante pruebas iniciales
             return ExtractedLeadContext()
