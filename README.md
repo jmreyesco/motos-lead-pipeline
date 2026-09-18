@@ -25,6 +25,32 @@ guarda los resultados en PostgreSQL y los expone mediante FastAPI.
 - `data/catalogo_motos.csv`: catálogo y disponibilidad.
 - `data/historico_cierres.csv`: histórico disponible para futuras calibraciones.
 
+## Análisis RAG de cierres definitivos
+
+El análisis histórico es una funcionalidad independiente y no se ejecuta al
+levantar la API ni al ejecutar el pipeline original. Lee
+`data/historico_cierres.csv` (también admite `.xlsx`/`.xls`), genera embeddings
+con `text-embedding-3-small` y los guarda en PostgreSQL usando `pgvector`.
+Después busca los cierres históricos más parecidos a cada registro de `leads`,
+combina la evidencia histórica con el score actual y guarda el resultado en:
+
+- `historico_cierres_rag`: documentos históricos y sus vectores.
+- `cierres_definitivos`: score, temperatura, similitud, tasa histórica de éxito
+  y recomendación por lead.
+
+La extensión PostgreSQL `vector` debe estar habilitada y `OPENAI_API_KEY` debe
+estar configurada. Para ejecutarlo explícitamente:
+
+```powershell
+python -m pip install -r requirements.txt
+python run_definitive_pipeline.py
+```
+
+El proceso es idempotente: no elimina ni modifica `leads`; actualiza sólo las
+dos tablas nuevas. El score definitivo conserva el 70% del score existente y
+usa 30% de la tasa de éxito de los vecinos históricos, para que el nuevo
+análisis no reemplace silenciosamente la lógica actual.
+
 ## Ejecución
 
 Con el entorno virtual activado:

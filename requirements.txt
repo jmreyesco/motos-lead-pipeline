@@ -1,5 +1,6 @@
 # Manipulación y análisis de datos
 pandas>=2.0.0
+openpyxl>=3.1.0
 
 # Validación de esquemas y conexión LLM
 pydantic>=2.0.0
