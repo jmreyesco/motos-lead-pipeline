@@ -14,6 +14,7 @@ class LeadBase(BaseModel):
     telefono: Optional[str] = None
     canal: Optional[str] = None
     modelo_interes: Optional[str] = None
+    sku: Optional[str] = None
     cuota_inicial_declarada: float = 0.0
     forma_pago: Optional[str] = None
     intencion_compra: Optional[str] = None

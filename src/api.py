@@ -8,7 +8,7 @@ from typing import List, Optional
 import pandas as pd
 
 from src.config import settings
-from src.database.connection import Base, engine, get_db
+from src.database.connection import Base, engine, get_db, init_db
 from src.repository.lead_repository import LeadRepository
 from src.schemas.lead import LeadResponse, LeadStatusUpdate
 import src.database.models
@@ -23,7 +23,7 @@ def sync_reference_tables() -> None:
     Las tablas se cargan una sola vez para no duplicar claves primarias.
     """
     try:
-        Base.metadata.create_all(bind=engine)
+        init_db()
 
         inspector = inspect(engine)
         if not inspector.has_table("asesores"):
@@ -100,7 +100,7 @@ def get_leads_list(
     estado: Optional[str] = Query(None, description="Filtro: NUEVO, ASIGNADO, etc."),
     empresa_id: Optional[str] = Query(None, description="ID de la empresa/concesionario"),
     asesor_id: Optional[str] = Query(None, description="ID del asesor asignado"),
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=50, ge=1, le=1000),
     db: Session = Depends(get_db)
 ):
     """Obtiene leads ordenados por score con filtros opcionales."""
@@ -181,6 +181,64 @@ def get_metrics_summary(
     }
 
 
+@app.get("/api/v1/cierres-definitivos")
+def get_definitive_closures(
+    empresa_id: Optional[str] = Query(None, description="ID de la empresa"),
+    asesor_id: Optional[str] = Query(None, description="ID del asesor"),
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    """
+    Devuelve el análisis RAG almacenado sin alterar los endpoints de leads.
+
+    La tabla se crea al ejecutar el pipeline independiente. Si todavía no se
+    ha ejecutado, se devuelve un error explícito para que el frontend pueda
+    informar que aún no hay análisis histórico disponible.
+    """
+    if not inspect(engine).has_table("cierres_definitivos"):
+        raise HTTPException(
+            status_code=404,
+            detail="La tabla cierres_definitivos aún no existe. Ejecute el pipeline histórico.",
+        )
+
+    filters = ["1 = 1"]
+    parameters = {"limit": limit}
+    if empresa_id:
+        filters.append("l.empresa_id = :empresa_id")
+        parameters["empresa_id"] = empresa_id.strip()
+    if asesor_id:
+        filters.append("l.asesor_id = :asesor_id")
+        parameters["asesor_id"] = asesor_id.strip()
+
+    query = text(f"""
+        SELECT
+            c.lead_id,
+            l.nombre,
+            l.telefono,
+            l.empresa_id,
+            l.punto_venta_id,
+            l.asesor_id,
+            l.modelo_interes,
+            l.canal,
+            c.score_pipeline,
+            c.temperatura_pipeline,
+            c.cierre_historico_id,
+            c.similitud_historica,
+            c.tasa_exito_historica,
+            c.score_definitivo,
+            c.temperatura_definitiva,
+            c.recomendacion,
+            c.analizado_en
+        FROM cierres_definitivos c
+        JOIN leads l ON l.lead_id = c.lead_id
+        WHERE {" AND ".join(filters)}
+        ORDER BY c.score_definitivo DESC, c.similitud_historica DESC
+        LIMIT :limit
+    """)
+    rows = db.execute(query, parameters).mappings().all()
+    return [dict(row) for row in rows]
+
+
 @app.get("/api/v1/e-leads")
 def get_leads(
     empresa_id: str = Query(..., description="ID obligatorio de la empresa a consultar"),
@@ -203,6 +261,7 @@ def get_leads(
                 "empresa_id": l.empresa_id,
                 "punto_venta_id": getattr(l, "punto_venta_id", None),
                 "modelo_interes": getattr(l, "modelo_interes", None),
+                "sku": getattr(l, "sku", None),
                 "temperatura": getattr(l, "temperatura", None),
                 "score_prioridad": getattr(l, "score_prioridad", None),
                 "estado_gestion": getattr(l, "estado_gestion", None),

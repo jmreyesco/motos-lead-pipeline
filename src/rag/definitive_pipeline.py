@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Iterable
 
 import pandas as pd
@@ -222,7 +221,9 @@ def analyze_definitive_closures(top_k: int = 5) -> int:
                 for weight, match in zip(weights, matches)
             ) / total_weight
             pipeline_score = float(lead["score_prioridad"] or 0.0)
-            definitive_score = round((pipeline_score * 0.70) + (success_rate * 100.0 * 0.30), 2)
+            # Este score pertenece exclusivamente al análisis histórico.
+            # El score del pipeline original se conserva sólo como referencia.
+            definitive_score = round(success_rate * 100.0, 2)
             temperature = "CALIENTE" if definitive_score >= 70 else "TIBIO" if definitive_score >= 40 else "FRIO"
             recommendation = (
                 "Priorizar: patrones históricos similares muestran alta probabilidad de cierre."

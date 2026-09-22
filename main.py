@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy import text
 from tqdm import tqdm
 
-from src.database.connection import engine, SessionLocal, Base
+from src.database.connection import engine, SessionLocal, init_db
 import src.database.models  # Carga los modelos en Base
 from src.ingestors.file_ingestor import FileIngestor
 from src.processing.cleaner import DataCleaner
@@ -17,7 +17,7 @@ from src.repository.lead_repository import LeadRepository
 
 def init_database():
     """Crea las tablas declaradas en los modelos SQLAlchemy."""
-    Base.metadata.create_all(bind=engine)
+    init_db()
 
 
 def sync_reference_table(
@@ -200,27 +200,37 @@ def run_pipeline(max_workers: int = 5):
 
     if not processed_payloads:
         print("✅ No hay leads nuevos para procesar. Cero tokens consumidos.")
-        return
+    else:
+        # 7. Asignar asesor y guardar únicamente los leads nuevos.
+        print(f"💾 Guardando {len(processed_payloads)} leads nuevos en la Base de Datos...")
+        db = SessionLocal()
+        repository = LeadRepository(db)
 
-    # 7. Asignar asesor y guardar únicamente los leads nuevos.
-    print(f"💾 Guardando {len(processed_payloads)} leads nuevos en la Base de Datos...")
+        try:
+            for payload in processed_payloads:
+                advisor_id = repository.assign_available_advisor(payload["empresa_id"], payload["punto_venta_id"])
+                payload["asesor_id"] = advisor_id
+                payload["estado_gestion"] = "ASIGNADO" if advisor_id else "NUEVO"
+                repository.save_lead(payload)
+
+            print(f"✅ Pipeline finalizado exitosamente. {len(processed_payloads)} leads nuevos guardados.")
+        except Exception as e:
+            db.rollback()
+            print(f"❌ Error durante el guardado en base de datos: {e}")
+            raise e
+        finally:
+            db.close()
+
+    # 8. Clasificar los modelos después de poblar leads, incluso si no hubo
+    # leads nuevos. Es idempotente y permite completar una tabla existente.
     db = SessionLocal()
-    repository = LeadRepository(db)
-
     try:
-        for payload in processed_payloads:
-            advisor_id = repository.assign_available_advisor(payload["empresa_id"], payload["punto_venta_id"])
-            payload["asesor_id"] = advisor_id
-            payload["estado_gestion"] = "ASIGNADO" if advisor_id else "NUEVO"
-
-            repository.save_lead(payload)
-
-        print(f"✅ Pipeline finalizado exitosamente. {len(processed_payloads)} leads nuevos guardados.")
-
+        updated_skus = LeadRepository(db).assign_skus_from_model()
+        print(f"🏍️ SKUs asignados/actualizados en leads: {updated_skus}.")
     except Exception as e:
         db.rollback()
-        print(f"❌ Error durante el guardado en base de datos: {e}")
-        raise e
+        print(f"❌ Error asignando SKU a los leads: {e}")
+        raise
     finally:
         db.close()
 

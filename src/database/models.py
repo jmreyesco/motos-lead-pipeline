@@ -55,6 +55,7 @@ class Lead(Base):
     telefono = Column(String(50), nullable=True)
     canal = Column(String(50), nullable=True)
     modelo_interes = Column(String(100), nullable=True)
+    sku = Column(String(50), nullable=True, index=True)
     cuota_inicial_declarada = Column(Float, default=0.0)
     forma_pago = Column(String(50), nullable=True)
     intencion_compra = Column(String(50), nullable=True)
